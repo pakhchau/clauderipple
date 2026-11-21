@@ -5073,6 +5073,9 @@ function openProviderForm(options) {
     // The Codex fast tier, one switch for the session's own turns and one for a subagent's.
     const fastMain = el("input", { type: "checkbox", checked: Boolean(existing && existing.fast && existing.fast.main === true) });
     const fastSubagent = el("input", { type: "checkbox", checked: Boolean(existing && existing.fast && existing.fast.subagent === true) });
+    // Which tier a switched-on turn asks for: Fast (priority) or Ultrafast, on the models that serve it.
+    const fastTier = el("select", {}, [selectOption("priority", t("providers.fastTierPriority")), selectOption("ultrafast", t("providers.fastTierUltrafast"))]);
+    fastTier.value = existing && existing.fast && existing.fast.tier === "ultrafast" ? "ultrafast" : "priority";
     chatgptFields = [
       inputRow(t("providers.credentials"), auth, t("providers.credentialsHelp")),
       el("div", { class: "form-field" }, [el("span", { text: t("providers.login") }), login, loginHelp]),
@@ -5082,13 +5085,14 @@ function openProviderForm(options) {
         el("label", { class: "check" }, [fastSubagent, el("span", { text: t("providers.fastSubagent") })]),
         el("small", { text: t("providers.fastHelp") }),
       ]),
+      inputRow(t("providers.fastTier"), fastTier, t("providers.fastTierHelp")),
     ];
     advancedContent.append(
       el("div", { class: "form-field" }, [el("label", { class: "check" }, [identity, el("span", { text: t("providers.identity") })]), el("small", { text: t("providers.identityHelp") })]),
       el("div", { class: "form-field" }, [el("label", { class: "check" }, [limitsInput, el("span", { text: t("providers.limits") })]), el("small", { text: t("providers.limitsHelp") })]),
       inputRow(t("providers.append"), append, t("providers.appendHelp")),
     );
-    advancedContent._chatgpt = { auth, effort, identity, limits: limitsInput, append, fastMain, fastSubagent };
+    advancedContent._chatgpt = { auth, effort, identity, limits: limitsInput, append, fastMain, fastSubagent, fastTier };
   }
   advanced.appendChild(advancedContent);
   const customUrlRow = isCustom ? inputRow(t("providers.url"), urlInput, t("providers.urlHelp")) : null;
@@ -5129,7 +5133,7 @@ function openProviderForm(options) {
   function draftProvider() {
     if (isChatgpt) {
       const chat = advancedContent._chatgpt;
-      return { type: "chatgpt", auth: chat.auth.value, defaultEffort: chat.effort.value, identity: chat.identity.checked, limits: chat.limits.checked, fast: { main: chat.fastMain.checked, subagent: chat.fastSubagent.checked }, ...(chat.append.value.trim() ? { instructionsAppend: chat.append.value.trim() } : {}) };
+      return { type: "chatgpt", auth: chat.auth.value, defaultEffort: chat.effort.value, identity: chat.identity.checked, limits: chat.limits.checked, fast: { main: chat.fastMain.checked, subagent: chat.fastSubagent.checked, tier: chat.fastTier.value === "ultrafast" ? "ultrafast" : "priority" }, ...(chat.append.value.trim() ? { instructionsAppend: chat.append.value.trim() } : {}) };
     }
     const prompt = advancedContent._prompt;
     return {

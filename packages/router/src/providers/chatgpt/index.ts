@@ -1307,7 +1307,7 @@ export class ChatGptAdapter {
       bytes,
       note: failure
         ? `${wantStream ? "mid-stream " : ""}${failure.type}: ${failure.message} (in=${u.input_tokens} cached=${u.cache_read_input_tokens} out=${u.output_tokens} replayed=${carried.replayed} reasoning=${mapper.reasoningCount})`
-        : `in=${u.input_tokens} cached=${u.cache_read_input_tokens} out=${u.output_tokens} stop=${mapper.stopReason} replayed=${carried.replayed} reasoning=${mapper.reasoningCount}${upstreamReq.service_tier ? " fast" : ""}`,
+        : `in=${u.input_tokens} cached=${u.cache_read_input_tokens} out=${u.output_tokens} stop=${mapper.stopReason} replayed=${carried.replayed} reasoning=${mapper.reasoningCount}${upstreamReq.service_tier ? ` ${upstreamReq.service_tier === "ultrafast" ? "ultrafast" : "fast"}` : ""}`,
       usage: {
         input: u.input_tokens,
         cached: u.cache_read_input_tokens,

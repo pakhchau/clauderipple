@@ -311,14 +311,23 @@ test("validate accepts a chatgpt provider's Fast switches and refuses a fast tha
 });
 
 test("a Fast switch that is not a boolean reads as off", () => {
-  assert.deepEqual(fastSwitches({ fast: { main: true, subagent: true } }), { main: true, subagent: true });
-  assert.deepEqual(fastSwitches({ fast: { main: false } }), { main: false, subagent: false });
-  assert.deepEqual(fastSwitches({ fast: {} }), { main: false, subagent: false });
-  assert.deepEqual(fastSwitches(undefined), { main: false, subagent: false });
+  assert.deepEqual(fastSwitches({ fast: { main: true, subagent: true } }), { main: true, subagent: true, tier: "priority" });
+  assert.deepEqual(fastSwitches({ fast: { main: false } }), { main: false, subagent: false, tier: "priority" });
+  assert.deepEqual(fastSwitches({ fast: {} }), { main: false, subagent: false, tier: "priority" });
+  assert.deepEqual(fastSwitches(undefined), { main: false, subagent: false, tier: "priority" });
   // A hand-edited file can hold anything: a value that is not `true` is off, never "on".
-  assert.deepEqual(fastSwitches({ fast: { main: "yes" as unknown as boolean, subagent: 1 as unknown as boolean } }), { main: false, subagent: false });
-  assert.deepEqual(fastSwitches({ fast: null as unknown as { main: boolean } }), { main: false, subagent: false });
-  assert.deepEqual(fastSwitches({ fast: "yes" as unknown as { main: boolean } }), { main: false, subagent: false });
+  assert.deepEqual(fastSwitches({ fast: { main: "yes" as unknown as boolean, subagent: 1 as unknown as boolean } }), { main: false, subagent: false, tier: "priority" });
+  assert.deepEqual(fastSwitches({ fast: null as unknown as { main: boolean } }), { main: false, subagent: false, tier: "priority" });
+  assert.deepEqual(fastSwitches({ fast: "yes" as unknown as { main: boolean } }), { main: false, subagent: false, tier: "priority" });
+});
+
+test("the Fast tier is priority unless it is exactly ultrafast", () => {
+  assert.deepEqual(fastSwitches({ fast: { main: true, tier: "ultrafast" } }), { main: true, subagent: false, tier: "ultrafast" });
+  assert.deepEqual(fastSwitches({ fast: { main: true, tier: "priority" } }), { main: true, subagent: false, tier: "priority" });
+  assert.deepEqual(fastSwitches({ fast: { main: true, tier: "ULTRAFAST" as unknown as "ultrafast" } }), { main: true, subagent: false, tier: "priority" });
+  assert.deepEqual(validate({ ...DEFAULTS, providers: { gpt: { type: "chatgpt", fast: { main: true, tier: "ultrafast" } } } }), []);
+  assert.deepEqual(validate({ ...DEFAULTS, providers: { gpt: { type: "chatgpt", fast: { main: true, tier: "priority" } } } }), []);
+  assert.ok(validate({ ...DEFAULTS, providers: { gpt: { type: "chatgpt", fast: { main: true, tier: "warp" as unknown as "ultrafast" } } } }).some((error) => error.includes("fast.tier must be")));
 });
 
 test("validate accepts compatible caps and rejects invalid values", () => {

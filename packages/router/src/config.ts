@@ -126,9 +126,12 @@ export type ChatGptProvider = ProviderLabel & {
    * The Fast (Codex priority tier) switches. Claude Code never asks for `speed: "fast"` on a GPT
    * request — its own client gate — so the tier is chosen here instead: `main` for the session's
    * own turns, `subagent` for the turns a subagent makes. Both off by default: the fast tier bills
-   * the plan faster.
+   * the plan faster. `tier` is what a switched-on turn asks for: "priority" (Codex Fast, the
+   * default) or "ultrafast" (Codex Ultrafast, which bills faster still). Ultrafast is only sent to
+   * the models that serve it (ULTRAFAST_MODELS in chatgpt/translate.ts); any other model gets
+   * priority, because the backend silently serves an unsupported Ultrafast ask at standard speed.
    */
-  fast?: { main?: boolean; subagent?: boolean };
+  fast?: { main?: boolean; subagent?: boolean; tier?: FastTier };
   /** Models offered in the GUI (the Codex backend has no listing endpoint). */
   models?: ProviderModel[];
 };
@@ -263,11 +266,15 @@ export type Provider = AnthropicCompatibleProvider | ChatGptProvider | OpenAiCom
  * by hand, and a value that is not a boolean ("yes", 1, null) must not be read as "on". A `fast`
  * that is not an object at all is off the same way, rather than a crash on the first request.
  */
-export function fastSwitches(provider: { fast?: { main?: unknown; subagent?: unknown } } | undefined): { main: boolean; subagent: boolean } {
+export function fastSwitches(provider: { fast?: { main?: unknown; subagent?: unknown; tier?: unknown } } | undefined): { main: boolean; subagent: boolean; tier: FastTier } {
   const fast = provider?.fast;
-  if (!fast || typeof fast !== "object") return { main: false, subagent: false };
-  return { main: fast.main === true, subagent: fast.subagent === true };
+  if (!fast || typeof fast !== "object") return { main: false, subagent: false, tier: "priority" };
+  // Only the exact string turns Ultrafast on; anything else stays on the cheaper Fast tier.
+  return { main: fast.main === true, subagent: fast.subagent === true, tier: fast.tier === "ultrafast" ? "ultrafast" : "priority" };
 }
+
+/** The tier a switched-on Fast turn asks the ChatGPT backend for. */
+export type FastTier = "priority" | "ultrafast";
 
 /**
  * The provider's own key wherever its headers carry it, and every header that is not that one.
@@ -964,6 +971,8 @@ export function validate(c: Config): string[] {
       // accident, and one odd value does not keep the whole config from loading.
       if (p.fast !== undefined && (!p.fast || typeof p.fast !== "object" || Array.isArray(p.fast))) {
         errors.push(`provider ${name}: fast must be an object with main and subagent booleans`);
+      } else if (p.fast?.tier !== undefined && p.fast.tier !== "priority" && p.fast.tier !== "ultrafast") {
+        errors.push(`provider ${name}: fast.tier must be "priority" or "ultrafast"`);
       }
     } else if (p.type === "openai-compatible") {
       if (!/^https?:\/\//.test(p.url)) errors.push(`provider ${name}: url must start with http:// or https://`);

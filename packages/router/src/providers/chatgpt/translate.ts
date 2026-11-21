@@ -76,7 +76,7 @@ export type ResponsesRequest = {
   stream: true;
   prompt_cache_key: string;
   /** Fast mode. "priority" is the wire value the Codex CLI sends for it (codex-rs `ServiceTier::Fast`). */
-  service_tier?: "priority";
+  service_tier?: "priority" | "ultrafast";
   /** Who this turn belongs to, in the shape the Codex CLI sends — see `conversationId`. */
   client_metadata: { session_id: string; thread_id: string; turn_id: string; "x-codex-window-id": string };
 };
@@ -109,7 +109,7 @@ export type TranslateOptions = {
    * `subagent` for the turns a subagent makes. Claude Code never asks for `speed: "fast"` on a GPT
    * request, so this is where the tier is chosen.
    */
-  fast?: { main?: boolean; subagent?: boolean };
+  fast?: { main?: boolean; subagent?: boolean; tier?: "priority" | "ultrafast" };
   /**
    * Whether this turn was made inside a subagent. Claude Code names the agent in the
    * `x-claude-code-agent-id` header (CLI 2.1.304), and only a subagent's request carries it.
@@ -517,8 +517,23 @@ export function toResponsesRequest(req: AnthropicRequest, opts: TranslateOptions
   // `fast.subagent` for a turn made inside a subagent, `fast.main` for the session's own turns.
   const fast = opts.fast;
   const fastOn = fast ? (opts.subagent === true ? fast.subagent === true : fast.main === true) : false;
-  if (req.speed === "fast" || fastOn) out.service_tier = "priority";
+  if (req.speed === "fast" || fastOn) out.service_tier = fastServiceTier(opts.model, fast?.tier);
   return out;
+}
+
+/**
+ * The models the ChatGPT backend serves at the Ultrafast tier (OpenAI's Ultrafast guide, Nov 2026).
+ * Measured 2026-11-22 on a Pro account: gpt-6.2-astra 434 tok/s Ultrafast vs 72 priority vs 50
+ * standard; gpt-6.2-sol 603 Ultrafast. A model outside this list asked for Ultrafast is served at
+ * standard speed with no error (gpt-6.1-terra: 56 tok/s either way), so it is asked for priority.
+ * The backend's `service_tier` echo reads "default" for a ChatGPT login whatever was served, so
+ * speed, not that field, is how a tier is verified.
+ */
+export const ULTRAFAST_MODELS: ReadonlySet<string> = new Set(["gpt-6.2-astra", "gpt-6.2-sol", "gpt-6-astra", "gpt-6.1-sol"]);
+
+/** The service_tier a Fast turn sends: Ultrafast where configured and served, otherwise priority. */
+export function fastServiceTier(model: string, tier: "priority" | "ultrafast" | undefined): "priority" | "ultrafast" {
+  return tier === "ultrafast" && ULTRAFAST_MODELS.has(model) ? "ultrafast" : "priority";
 }
 
 /** Rough token estimate for /v1/messages/count_tokens when the model is not Anthropic's. */

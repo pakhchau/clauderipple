@@ -23,6 +23,7 @@ test("every language the dashboard speaks has the ChatGPT Fast switches", () => 
     assert.ok(dict["providers.fastMain"], `${lang}: providers.fastMain`);
     assert.ok(dict["providers.fastSubagent"], `${lang}: providers.fastSubagent`);
     assert.ok(dict["providers.fastHelp"], `${lang}: providers.fastHelp`);
+    for (const key of ["providers.fastTier", "providers.fastTierPriority", "providers.fastTierUltrafast", "providers.fastTierHelp"]) assert.ok(dict[key], `${lang}: ${key}`);
   }
   assert.equal(i18n.ko!["providers.fastMain"], "메인 세션에 Fast 적용");
   assert.equal(i18n.ko!["providers.fastSubagent"], "서브에이전트에 Fast 적용");
@@ -34,7 +35,9 @@ test("the ChatGPT provider form shows both switches and saves them", () => {
   // The two switches, read back from the saved provider.
   assert.match(source, /existing\.fast && existing\.fast\.main === true/);
   assert.match(source, /existing\.fast && existing\.fast\.subagent === true/);
-  assert.match(source, /fast: \{ main: chat\.fastMain\.checked, subagent: chat\.fastSubagent\.checked \}/);
+  // The tier is read back too, so saving the form never drops an Ultrafast choice.
+  assert.match(source, /existing\.fast && existing\.fast\.tier === "ultrafast"/);
+  assert.match(source, /fast: \{ main: chat\.fastMain\.checked, subagent: chat\.fastSubagent\.checked, tier: chat\.fastTier\.value === "ultrafast" \? "ultrafast" : "priority" \}/);
   // The form owns the field, so the saved one is not merged over it (and not dropped either).
   assert.match(source, /"instructionsAppend", "fast", "models"/);
 });

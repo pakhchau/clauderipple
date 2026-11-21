@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { StreamMapper, conversationId, conversationKey, estimateTokens, formatSse, normalizeSchema, toResponsesRequest, toolNameForResponses, toolNameRestoreMap, type AnthropicRequest } from "../src/providers/chatgpt/translate.ts";
+import { StreamMapper, ULTRAFAST_MODELS, conversationId, conversationKey, estimateTokens, formatSse, normalizeSchema, fastServiceTier, toResponsesRequest, toolNameForResponses, toolNameRestoreMap, type AnthropicRequest } from "../src/providers/chatgpt/translate.ts";
 import { SseParser } from "../src/providers/chatgpt/sse.ts";
 import { encodeEnvelope } from "../src/reasoning.ts";
 
@@ -402,6 +402,26 @@ test("`speed: fast` still asks for the fast tier whichever switch is on", () => 
   // The switch is the provider's own choice, so it asks for the tier whatever `speed` says.
   assert.equal(toResponsesRequest({ ...turn1, speed: "standard" }, { ...opts, fast: { main: true } }).service_tier, "priority");
   assert.equal(toResponsesRequest({ ...turn1, speed: "standard" }, { ...opts, fast: { main: false, subagent: false } }).service_tier, undefined);
+});
+
+// Measured 2026-11-22: Ultrafast streams gpt-6.2-astra at ~434 tok/s against 72 for priority, and an
+// Ultrafast ask for a model that does not serve it comes back at standard speed with no error.
+test("the Ultrafast tier goes only to the models that serve it; the rest get priority", () => {
+  for (const model of ["gpt-6.2-astra", "gpt-6.2-sol", "gpt-6-astra", "gpt-6.1-sol"]) {
+    assert.ok(ULTRAFAST_MODELS.has(model), model);
+    assert.equal(toResponsesRequest(turn1, { ...opts, model, fast: { main: true, tier: "ultrafast" } }).service_tier, "ultrafast", model);
+    assert.equal(toResponsesRequest({ ...turn1, speed: "fast" }, { ...opts, model, fast: { tier: "ultrafast" } }).service_tier, "ultrafast", `${model} via speed: fast`);
+    assert.equal(toResponsesRequest(turn1, { ...opts, model, fast: { main: true, tier: "priority" } }).service_tier, "priority", `${model} on the priority tier`);
+    assert.equal(toResponsesRequest(turn1, { ...opts, model, fast: { main: true } }).service_tier, "priority", `${model} with no tier set`);
+  }
+  for (const model of ["gpt-6.1-terra", "gpt-6-luna", "gpt-5.6-sol"]) {
+    assert.equal(toResponsesRequest(turn1, { ...opts, model, fast: { main: true, tier: "ultrafast" } }).service_tier, "priority", model);
+  }
+  // The tier never turns Fast on by itself, and it follows the same main/subagent split.
+  assert.equal(toResponsesRequest(turn1, { ...opts, model: "gpt-6.2-astra", fast: { tier: "ultrafast" } }).service_tier, undefined);
+  assert.equal(toResponsesRequest(turn1, { ...opts, model: "gpt-6.2-astra", fast: { main: true, tier: "ultrafast" }, subagent: true }).service_tier, undefined);
+  assert.equal(toResponsesRequest(turn1, { ...opts, model: "gpt-6.2-astra", fast: { subagent: true, tier: "ultrafast" }, subagent: true }).service_tier, "ultrafast");
+  assert.equal(fastServiceTier("gpt-6.2-astra", undefined), "priority");
 });
 
 // ---- reasoning replay (reasoning.ts) -----------------------------------------------------------
