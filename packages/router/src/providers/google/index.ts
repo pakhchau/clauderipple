@@ -38,7 +38,18 @@ import { writeJsonAtomic } from "../../locked-file.ts";
 import { antigravityQuotaScope, GoogleUsage, type QuotaGroup } from "./usage.ts";
 import { ANTIGRAVITY_PROMPT_REFUSAL_MESSAGE, isAntigravityPromptRefusal } from "./prompt-refusal.ts";
 import { promptAdditions } from "../../identity.ts";
+import { Agent as H2PingAgent } from "undici";
 import type { RequestKind } from "../../routing.ts";
+
+// Gemini sends no bytes while it thinks, and some network paths (a VPN, measured 2026-11-21 on
+// NordVPN) cut any connection silent for 60s: a long-thinking turn died at 60.2s every time over
+// HTTP/1.1, and TCP keepalive did not help. HTTP/2 PING frames every 15s keep data flowing, so a
+// 173s silent turn completed. Both Gemini request paths below use this dispatcher.
+const GOOGLE_DISPATCHER = new H2PingAgent({ bodyTimeout: 15 * 60_000, headersTimeout: 15 * 60_000, allowH2: true, pingInterval: 15_000 });
+/** Node's fetch takes undici's `dispatcher`, which the DOM `RequestInit` type does not name. */
+function withH2Ping(init: RequestInit): RequestInit {
+  return Object.assign(init, { dispatcher: GOOGLE_DISPATCHER });
+}
 
 const PING_MS = 15_000;
 /** How long the CCA model list is reused before asking again. */
@@ -832,12 +843,12 @@ export class GoogleAdapter {
       for (;;) {
         const { built, secrets } = attempt(credentialHeaders);
         for (const secret of secrets) if (!upstreamSecrets.includes(secret)) upstreamSecrets.push(secret);
-        upstream = await fetchWithRetry(built.url, {
+        upstream = await fetchWithRetry(built.url, withH2Ping({
           method: "POST",
           headers: built.headers,
           body: built.body,
           signal: controller.signal,
-        }, { log: (line) => this.log.info(`google ${this.name}: ${redact(line)}`) });
+        }), { log: (line) => this.log.info(`google ${this.name}: ${redact(line)}`) });
         // Nothing has been written to the client, so a refusal another key could answer is asked
         // again here rather than handed to the user as a 429 they would have to retry by hand. The
         // proxy decides which key is next and charges the refusal to the one that answered (§4
@@ -1121,12 +1132,12 @@ export class GoogleAdapter {
       try {
         // Retried on the same account, before any status or byte reaches the client, so a relay's
         // hiccup is absorbed inside the turn instead of arriving as an error to retry by hand.
-        upstream = await fetchWithRetry(built.url, {
+        upstream = await fetchWithRetry(built.url, withH2Ping({
           method: "POST",
           headers: built.headers,
           body: built.body,
           signal: spec.signal,
-        }, { log: (line) => this.log.info(`google ${this.name}: ${spec.redact(line)}`), stopOn: isModelCapacityExhausted });
+        }), { log: (line) => this.log.info(`google ${this.name}: ${spec.redact(line)}`), stopOn: isModelCapacityExhausted });
       } catch (e) {
         if (spec.signal.aborted) return { kind: "aborted" };
         this.pool.penalise(this.name, credential.id, 0);
