@@ -18,7 +18,7 @@ async function serve(handler: (res: http.ServerResponse) => Promise<void>): Prom
 const sse = (event: string, data: unknown) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-test("the first content_block_delta written marks the first output, not message_start or pings", async () => {
+test("the first text content_block_delta marks the first output, not message_start, pings or thinking", async () => {
   let watched: { at: () => number | undefined } | undefined;
   let before = 0, after = 0;
   await serve(async (res) => {
@@ -26,6 +26,8 @@ test("the first content_block_delta written marks the first output, not message_
     res.writeHead(200, { "content-type": "text/event-stream" });
     res.write(sse("message_start", { type: "message_start" }));
     res.write(Buffer.from(sse("ping", { type: "ping" })));
+    // A thinking summary streams while the model still thinks: not the start of the writing.
+    res.write(sse("content_block_delta", { type: "content_block_delta", delta: { type: "thinking_delta", thinking: "hmm" } }));
     await pause(60);
     assert.equal(watched.at(), undefined, "nothing of the answer yet");
     before = Date.now();
@@ -47,4 +49,16 @@ test("a response that never writes an answer has no first output", async () => {
     res.end(JSON.stringify({ type: "error", error: { type: "api_error", message: "no" } }));
   });
   assert.equal(watched!.at(), undefined);
+});
+
+test("a tool call's first argument delta marks the first output", async () => {
+  let watched: { at: () => number | undefined } | undefined;
+  await serve(async (res) => {
+    watched = watchFirstOutput(res);
+    res.writeHead(200, { "content-type": "text/event-stream" });
+    res.write(sse("content_block_start", { type: "content_block_start", content_block: { type: "tool_use", name: "Bash" } }));
+    assert.equal(watched.at(), undefined);
+    res.end(sse("content_block_delta", { type: "content_block_delta", delta: { type: "input_json_delta", partial_json: "{}" } }));
+  });
+  assert.notEqual(watched!.at(), undefined);
 });

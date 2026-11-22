@@ -6651,7 +6651,10 @@ function outputRateOf(record) {
   const wait = firstOutputOf(record);
   if (wait !== null) {
     const writing = record.ms - wait;
-    return writing < WRITING_RATE_MIN_MS ? null : (output * 1000) / writing;
+    // Hidden reasoning tokens were generated during the wait, not the writing.
+    const reasoning = typeof record.usage.reasoning === "number" && Number.isFinite(record.usage.reasoning) && record.usage.reasoning > 0 ? record.usage.reasoning : 0;
+    const visible = output - reasoning;
+    return writing < WRITING_RATE_MIN_MS || visible <= 0 ? null : (visible * 1000) / writing;
   }
   return (output * 1000) / record.ms;
 }
@@ -6705,6 +6708,7 @@ function requestDetail(record) {
   if (record.requestedTier || record.servedTier) details.push([t("logs.detail.tier"), `${record.requestedTier || t("logs.none")} / ${record.servedTier || t("logs.none")}`]);
   const wait = firstOutputOf(record);
   if (wait !== null) details.push([t("logs.detail.firstOutput"), formatSeconds(wait)], [t("logs.detail.writing"), formatSeconds(record.ms - wait)]);
+  if (record.usage && record.usage.reasoning > 0) details.push([t("logs.detail.reasoning"), formatNumber(record.usage.reasoning)]);
   const cells = details.map(([label, value]) => el("div", {}, [el("span", { class: "detail-label", text: label }), el("span", { class: "detail-value" }, Array.isArray(value) ? value : [value])]));
   if (record.note) cells.push(el("div", { class: "request-note" }, [el("span", { class: "detail-label", text: t("logs.detail.note") }), el("span", { class: "detail-value", text: record.note })]));
   return el("tr", { class: "request-detail" }, [el("td", { colspan: "7" }, [el("div", { class: "request-detail-grid" }, cells)])]);

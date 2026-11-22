@@ -582,6 +582,8 @@ export class StreamMapper {
    * `reasoning=` figure the request log shows next to `replayed=`.
    */
   reasoningCount = 0;
+  /** Hidden reasoning tokens inside `output_tokens` (`output_tokens_details.reasoning_tokens`), when the backend says. */
+  reasoningTokens: number | undefined;
   /** The reasoning item being assembled: its identity so far and the call it followed. */
   private pendingReasoning: { id?: string; summary?: unknown; encrypted?: string; text: string; callId: string | undefined } | null = null;
   /** The most recent function_call item added, which is what a following reasoning item describes. */
@@ -849,11 +851,13 @@ export class StreamMapper {
       }
       case "response.completed":
       case "response.incomplete": {
-        const r = ev.response as { service_tier?: unknown; usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number } }; incomplete_details?: { reason?: string } } | undefined;
+        const r = ev.response as { service_tier?: unknown; usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number }; output_tokens_details?: { reasoning_tokens?: number } }; incomplete_details?: { reason?: string } } | undefined;
         if (typeof r?.service_tier === "string") this.servedTier = r.service_tier;
         const u = r?.usage;
         if (u) {
           const cached = u.input_tokens_details?.cached_tokens ?? 0;
+          const reasoning = u.output_tokens_details?.reasoning_tokens;
+          if (typeof reasoning === "number" && Number.isFinite(reasoning) && reasoning >= 0) this.reasoningTokens = reasoning;
           this.usage = {
             input_tokens: Math.max(0, (u.input_tokens ?? 0) - cached),
             output_tokens: u.output_tokens ?? 0,

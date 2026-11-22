@@ -1313,6 +1313,7 @@ export class ChatGptAdapter {
         cached: u.cache_read_input_tokens,
         ...(u.cache_creation_input_tokens > 0 ? { cacheWrite: u.cache_creation_input_tokens } : {}),
         output: u.output_tokens,
+        ...(mapper.reasoningTokens !== undefined && mapper.reasoningTokens > 0 ? { reasoning: mapper.reasoningTokens } : {}),
       },
       stopReason: mapper.stopReason,
       ...((!wantStream && !failure) || messageSent ? { messageId: mapper.messageId } : {}),

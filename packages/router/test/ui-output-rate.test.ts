@@ -51,6 +51,16 @@ test("with a first-output time the rate leaves the wait out", () => {
   for (const firstOutputMs of [-1, 5_000, Number.NaN, "3000"]) assert.equal(rate({ ...answer, firstOutputMs }), 200, String(firstOutputMs));
 });
 
+test("hidden reasoning tokens are left out of the writing speed", () => {
+  const rate = loadRate();
+  // 800 output tokens of which 300 were reasoning, made during the 3 s wait: 500 written in 1 s.
+  assert.equal(rate({ ...answer, firstOutputMs: 3_000, usage: { ...answer.usage, reasoning: 300 } }), 500);
+  // Without a first-output time the whole-time rate stands, reasoning and all.
+  assert.equal(rate({ ...answer, usage: { ...answer.usage, reasoning: 300 } }), 200);
+  // An output that was all reasoning has nothing written to rate.
+  assert.equal(rate({ ...answer, firstOutputMs: 3_000, usage: { ...answer.usage, reasoning: 800 } }), null);
+});
+
 test("a request with no real answer or output has no rate", () => {
   const rate = loadRate();
   for (const record of [

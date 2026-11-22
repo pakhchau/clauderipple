@@ -16,6 +16,12 @@ export type RequestUsage = {
   cached: number;
   cacheWrite?: number;
   output: number;
+  /**
+   * Of `output`, the hidden reasoning tokens, where the provider reports them (the ChatGPT backend's
+   * `output_tokens_details.reasoning_tokens`). They are generated before the first visible token, so
+   * the dashboard leaves them out of the writing speed.
+   */
+  reasoning?: number;
 };
 
 export type RequestRecord = {

@@ -286,8 +286,8 @@ export type Stats = {
 };
 
 /**
- * When the first piece of the answer reached the client: the first `content_block_delta` written to
- * the response, whichever provider wrote it. The time before it is the wait (reading the context,
+ * When the first piece of the answer reached the client: the first text or tool-argument
+ * `content_block_delta` written to the response, whichever provider wrote it. The time before it is the wait (reading the context,
  * thinking); the time after it is the writing, which is what a speed tier changes. A request's whole
  * duration mixes the two, so a short tool call on Ultrafast read ~30 tok/s on the dashboard while it
  * streamed at several hundred (2026-11-22). A compressed passthrough body cannot be read here and
@@ -295,14 +295,24 @@ export type Stats = {
  */
 export function watchFirstOutput(res: http.ServerResponse): { at: () => number | undefined } {
   let at: number | undefined;
+  const see = (chunk: unknown): void => {
+    if (at !== undefined || chunk == null || typeof chunk === "function") return;
+    const text = typeof chunk === "string" ? chunk : chunk instanceof Uint8Array ? Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength).toString("latin1") : "";
+    // Visible text or a tool call's arguments; a thinking summary streams while the model is still
+    // thinking, so it does not start the writing.
+    if (text.includes("content_block_delta") && (text.includes("text_delta") || text.includes("input_json_delta"))) at = Date.now();
+  };
   const write = res.write;
   res.write = function (this: http.ServerResponse, chunk: unknown, ...rest: unknown[]): boolean {
-    if (at === undefined && chunk != null) {
-      const text = typeof chunk === "string" ? chunk : chunk instanceof Uint8Array ? Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength).toString("latin1") : "";
-      if (text.includes("content_block_delta")) at = Date.now();
-    }
+    see(chunk);
     return (write as (...args: unknown[]) => boolean).call(this, chunk, ...rest);
   } as typeof res.write;
+  // `end(chunk)` writes its chunk without going through `write`.
+  const end = res.end;
+  res.end = function (this: http.ServerResponse, chunk?: unknown, ...rest: unknown[]): http.ServerResponse {
+    see(chunk);
+    return (end as (...args: unknown[]) => http.ServerResponse).call(this, chunk, ...rest);
+  } as typeof res.end;
   return { at: () => at };
 }
 
