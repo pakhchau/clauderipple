@@ -285,6 +285,27 @@ export type Stats = {
   lastMessageEndedAt?: number;
 };
 
+/**
+ * When the first piece of the answer reached the client: the first `content_block_delta` written to
+ * the response, whichever provider wrote it. The time before it is the wait (reading the context,
+ * thinking); the time after it is the writing, which is what a speed tier changes. A request's whole
+ * duration mixes the two, so a short tool call on Ultrafast read ~30 tok/s on the dashboard while it
+ * streamed at several hundred (2026-11-22). A compressed passthrough body cannot be read here and
+ * leaves the time unset; the dashboard then falls back to the whole-duration rate.
+ */
+export function watchFirstOutput(res: http.ServerResponse): { at: () => number | undefined } {
+  let at: number | undefined;
+  const write = res.write;
+  res.write = function (this: http.ServerResponse, chunk: unknown, ...rest: unknown[]): boolean {
+    if (at === undefined && chunk != null) {
+      const text = typeof chunk === "string" ? chunk : chunk instanceof Uint8Array ? Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength).toString("latin1") : "";
+      if (text.includes("content_block_delta")) at = Date.now();
+    }
+    return (write as (...args: unknown[]) => boolean).call(this, chunk, ...rest);
+  } as typeof res.write;
+  return { at: () => at };
+}
+
 export class Proxy {
   readonly stats: Stats = { inFlight: 0, messagesInFlight: 0, started: 0, completed: 0, failed: 0 };
   private readonly inFlightSockets = new Set<Duplex>();
@@ -914,6 +935,7 @@ export class Proxy {
     let finished = false;
     let clientClosed = false;
     res.once("close", () => { clientClosed = !res.writableEnded; });
+    const firstOutput = isMessages ? watchFirstOutput(res) : undefined;
     // The background lookup of the current login's email, when the login answers this request. Nothing
     // waits on it; the row takes the email when it is written (writeLoginRow).
     let loginWatch: LoginEmailWatch | undefined;
@@ -991,6 +1013,8 @@ export class Proxy {
         if (extra?.servedTier !== undefined) completed.servedTier = extra.servedTier;
         if (extra?.upstreamCalled === false && !unwrittenSeen) completed.upstreamCalled = false;
         if (extra?.refusal !== undefined) completed.refusal = extra.refusal;
+        const firstOutputAt = firstOutput?.at();
+        if (firstOutputAt !== undefined && firstOutputAt >= t0 && firstOutputAt - t0 <= ms) completed.firstOutputMs = firstOutputAt - t0;
         const provider = cfg.providers[completed.provider];
         if (completed.ok && completed.kind === "messages" && completed.messageId && provider && provider.type !== "anthropic") {
           this.routedMessageIds.delete(completed.messageId);

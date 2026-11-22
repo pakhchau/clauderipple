@@ -51,6 +51,12 @@ export type RequestRecord = {
   purpose?: "auto-mode-classifier" | "web-search" | "web-fetch" | "compaction";
   requestedTier?: string;
   servedTier?: string;
+  /**
+   * Milliseconds from the start of the request to the first piece of the answer written to the client
+   * (the first `content_block_delta`). `ms - firstOutputMs` is the writing time, which the dashboard's
+   * speed is measured over. Absent on older rows and where the body could not be read (compressed).
+   */
+  firstOutputMs?: number;
   stopReason?: string;
   usage?: RequestUsage;
   note?: string;

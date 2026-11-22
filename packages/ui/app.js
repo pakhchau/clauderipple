@@ -6623,19 +6623,36 @@ function totalInputOf(usage) {
 }
 // Below this a request is mostly fixed overhead, and a rate from it is noise.
 const OUTPUT_RATE_MIN_MS = 500;
+// Below this much writing time a rate is noise: a tool call's arguments can arrive in one piece.
+const WRITING_RATE_MIN_MS = 150;
 /**
- * Output tokens per second over the request's whole recorded time: the router's `ms` runs from the
- * body read to the response end, so the wait for the first token is in it and this is not the
- * model's generation speed. Only a finished model answer with a real output count gets one: a
- * failure, a resend, an answer refused before reaching a model, a web search (answered in one piece
- * after the search) and an image have none, and neither has an output of 0, which a missing usage
- * also reads as.
+ * The wait before the first piece of the answer reached the client (`firstOutputMs`, recorded by the
+ * router), or null for a row without it: older rows, and a passthrough body the router could not read.
+ */
+function firstOutputOf(record) {
+  if (!record || typeof record.firstOutputMs !== "number" || !Number.isFinite(record.firstOutputMs) || record.firstOutputMs < 0) return null;
+  if (typeof record.ms !== "number" || !Number.isFinite(record.ms) || record.firstOutputMs > record.ms) return null;
+  return record.firstOutputMs;
+}
+/**
+ * Output tokens per second while the answer was being written: from the first piece of the answer to
+ * the end, so the wait before it (reading the context, thinking) is left out and a speed tier shows
+ * as what it is (a short Ultrafast tool call read ~30 tok/s over its whole time, 2026-11-22). A row
+ * without a first-output time falls back to the output over the request's whole recorded time, which
+ * holds the wait. Only a finished model answer with a real output count gets one: a failure, a
+ * resend, an answer refused before reaching a model, a web search (answered in one piece after the
+ * search) and an image have none, and neither has an output of 0, which a missing usage also reads as.
  */
 function outputRateOf(record) {
   if (!record || record.kind !== "messages" || record.purpose === "web-search" || !record.ok || record.resent || record.upstreamCalled === false) return null;
   const output = record.usage ? record.usage.output : undefined;
   if (typeof output !== "number" || !Number.isFinite(output) || output <= 0) return null;
   if (typeof record.ms !== "number" || !Number.isFinite(record.ms) || record.ms < OUTPUT_RATE_MIN_MS) return null;
+  const wait = firstOutputOf(record);
+  if (wait !== null) {
+    const writing = record.ms - wait;
+    return writing < WRITING_RATE_MIN_MS ? null : (output * 1000) / writing;
+  }
   return (output * 1000) / record.ms;
 }
 /**
@@ -6686,6 +6703,8 @@ function requestDetail(record) {
   // Both tiers side by side: the ChatGPT sign-in often serves `default` for a request made on
   // `priority` (#54), so the served tier cannot be the FAST badge's basis; the requested one is.
   if (record.requestedTier || record.servedTier) details.push([t("logs.detail.tier"), `${record.requestedTier || t("logs.none")} / ${record.servedTier || t("logs.none")}`]);
+  const wait = firstOutputOf(record);
+  if (wait !== null) details.push([t("logs.detail.firstOutput"), formatSeconds(wait)], [t("logs.detail.writing"), formatSeconds(record.ms - wait)]);
   const cells = details.map(([label, value]) => el("div", {}, [el("span", { class: "detail-label", text: label }), el("span", { class: "detail-value" }, Array.isArray(value) ? value : [value])]));
   if (record.note) cells.push(el("div", { class: "request-note" }, [el("span", { class: "detail-label", text: t("logs.detail.note") }), el("span", { class: "detail-value", text: record.note })]));
   return el("tr", { class: "request-detail" }, [el("td", { colspan: "7" }, [el("div", { class: "request-detail-grid" }, cells)])]);
@@ -6706,11 +6725,13 @@ function requestRow(record) {
     providerBadge(record.provider, account || providerDisplayName(record.provider), account ? providerDisplayName(record.provider) : undefined),
     // The requested tier, not the served one: the ChatGPT sign-in answers `default` to a Fast request (#54).
     record.requestedTier === "priority" ? el("span", { class: "fast-tag", text: "FAST", title: t("logs.fastHelp") }) : null,
+    record.requestedTier === "ultrafast" ? el("span", { class: "fast-tag ultrafast-tag", text: "ULTRAFAST", title: t("logs.ultrafastHelp") }) : null,
   ].filter(Boolean));
   // The whole input, not the uncached remainder: a fully cached Anthropic turn reports `input: 2`,
   // which read as a two-token request (2026-09-23). The split is in the detail row.
   const totalInput = record.usage ? totalInputOf(record.usage) : 0;
   const rate = outputRateOf(record);
+  const wait = firstOutputOf(record);
   // A row without usage keeps an empty pill, so its dash lines up with the figures above it.
   const input = record.usage
     ? el("span", { class: "token-cell", text: formatNumber(totalInput) }, [
@@ -6730,10 +6751,12 @@ function requestRow(record) {
     el("td", { class: "c-effort", text: record.effort || t("common.notAvailable") }),
     el("td", { class: "c-in" }, [input]),
     el("td", { class: record.usage ? "c-out" : "c-out no-usage", text: record.usage ? formatNumber(record.usage.output) : t("common.notAvailable") }),
-    el("td", { class: "c-dur", title: rate === null ? undefined : t("logs.rateHelp") }, [
+    el("td", { class: "c-dur", title: wait !== null ? t("logs.writingRateHelp") : rate === null ? undefined : t("logs.rateHelp") }, [
       formatSeconds(record.ms),
       el("span", { class: "rate-pill", ...(rate === null ? { "aria-hidden": "true" } : { text: formatRate(rate) }) }),
-    ]),
+      // The wait before the first token, apart from the writing speed beside it.
+      wait !== null ? el("span", { class: "wait-pill", text: t("logs.wait", { value: formatSeconds(wait) }) }) : null,
+    ].filter(Boolean)),
     el("td", { class: "c-status" }, [status]),
   );
   return row;

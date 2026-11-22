@@ -973,6 +973,8 @@ td.c-dur[title] { cursor: help; }
 .cache-pill { min-width: 6.4em; }
 .cache-pill.cache-write { min-width: 0; color: var(--label-3); }
 .rate-pill { min-width: 7.6em; }
+.wait-pill { display: inline-block; margin-left: 6px; color: var(--label-3, var(--label-2)); font-size: 11px; white-space: nowrap; }
+.ultrafast-tag { color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 #requests-table td.c-dur, #models-table td.c-dur, #models-table td.c-cost { white-space: nowrap; }
 .no-usage { color: var(--label-3); }
 /* A request that went through reads as quietly as the rest of its row; a failure is the one in red. */
@@ -1507,6 +1509,7 @@ a.cell { color: inherit; text-decoration: none; }
   #requests-table .request-models > .small { display: none; }
   /* In a list line the figures follow one another: their pills keep no set width, an empty one takes none. */
   #view-logs .cache-pill, #view-logs .rate-pill { min-width: 0; margin-left: 4px; }
+  #view-logs .wait-pill { margin-left: 4px; }
   #view-logs .cache-pill:empty, #view-logs .rate-pill:empty { display: none; }
   #requests-table .request-models { flex-wrap: wrap; row-gap: 3px; }
   #requests-table .provider-badge { max-width: 100%; }

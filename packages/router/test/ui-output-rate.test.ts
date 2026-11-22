@@ -38,6 +38,19 @@ test("a finished answer's rate is its output over its whole time", () => {
   assert.equal(loadRate()(answer), 200);
 });
 
+// A short Ultrafast tool call read ~30 tok/s over its whole time while it streamed at several hundred
+// (2026-11-22): with the router's first-output time the rate is taken over the writing alone.
+test("with a first-output time the rate leaves the wait out", () => {
+  const rate = loadRate();
+  // 800 tokens, 4 s in all, the first token after 3 s: written in 1 s.
+  assert.equal(rate({ ...answer, firstOutputMs: 3_000 }), 800);
+  assert.equal(rate({ ...answer, firstOutputMs: 0 }), 200);
+  // Arguments that arrived in one piece leave no writing time worth a rate.
+  assert.equal(rate({ ...answer, firstOutputMs: 3_950 }), null);
+  // A first-output time that cannot be right is ignored, and the whole-time rate stands.
+  for (const firstOutputMs of [-1, 5_000, Number.NaN, "3000"]) assert.equal(rate({ ...answer, firstOutputMs }), 200, String(firstOutputMs));
+});
+
 test("a request with no real answer or output has no rate", () => {
   const rate = loadRate();
   for (const record of [
@@ -82,5 +95,7 @@ test("every language names the rate and says the first-token wait is in it", () 
     assert.ok((table["logs.rateHelp"] ?? "").length > 20, lang);
     assert.match(table["logs.rateApprox"] ?? "", /\{value\}/, lang);
     assert.ok((table["logs.modelRateHelp"] ?? "").length > 20, lang);
+    assert.match(table["logs.wait"] ?? "", /\{value\}/, lang);
+    for (const key of ["logs.writingRateHelp", "logs.detail.firstOutput", "logs.detail.writing", "logs.ultrafastHelp"]) assert.ok((table[key] ?? "").length > 3, `${lang}: ${key}`);
   }
 });
